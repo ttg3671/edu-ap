@@ -23,23 +23,14 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Remove old dist folder
+        run: rm -rf dist
+
       - name: Build Project
         env:
           VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
           VITE_IMG_URL: ${{ secrets.VITE_IMG_URL }}
         run: npm run build
-
-      - name: Clean old deployment
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.SFTP_HOST }}
-          username: ${{ secrets.SFTP_USER }}
-          password: ${{ secrets.SFTP_PASSWORD }}
-          port: ${{ secrets.SFTP_PORT || '22' }}
-          script: |
-            find /home/edumovimiento-admin/htdocs -mindepth 1 -maxdepth 1 \
-              ! -name 'admin.edumovimiento.com' \
-              -exec rm -rf {} +
 
       - name: Deploy to CloudPanel via SFTP
         uses: wlixcc/SFTP-Deploy-Action@v1.2.4
@@ -49,5 +40,6 @@ jobs:
           username: ${{ secrets.SFTP_USER }}
           password: ${{ secrets.SFTP_PASSWORD }}
           local_path: './dist/*'
-          remote_path: ${{ secrets.SFTP_TARGET_PATH }}
+          remote_path: '/home/edumovimiento-admin/htdocs/dist'
+          delete_remote_files: true
           sftpArgs: '-o ConnectTimeout=60'
