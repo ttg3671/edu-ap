@@ -3,8 +3,8 @@ name: Build and Deploy to CloudPanel
 on:
   push:
     branches:
-      - main # Change to 'master' if your default branch is master
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+      - main
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -12,13 +12,13 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: npm
 
       - name: Install Dependencies
         run: npm ci
@@ -29,6 +29,18 @@ jobs:
           VITE_IMG_URL: ${{ secrets.VITE_IMG_URL }}
         run: npm run build
 
+      - name: Clean old deployment
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USER }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          port: ${{ secrets.SFTP_PORT || '22' }}
+          script: |
+            find /home/myapp/htdocs -mindepth 1 -maxdepth 1 \
+              ! -name 'admin.edumovimiento.com' \
+              -exec rm -rf {} +
+
       - name: Deploy to CloudPanel via SFTP
         uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
@@ -36,11 +48,6 @@ jobs:
           port: ${{ secrets.SFTP_PORT || '22' }}
           username: ${{ secrets.SFTP_USER }}
           password: ${{ secrets.SFTP_PASSWORD }}
-          # Alternatively, if you use an SSH key instead of password:
-          # ssh_private_key: ${{ secrets.SFTP_SSH_KEY }}
-          # To deploy files directly into htdocs: './dist/*'
-          # To deploy the 'dist' folder itself into htdocs: './dist'
           local_path: './dist/*'
-          # CloudPanel site path: /home/<site-user>/htdocs/<your-domain>
           remote_path: ${{ secrets.SFTP_TARGET_PATH }}
           sftpArgs: '-o ConnectTimeout=60'

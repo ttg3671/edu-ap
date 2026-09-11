@@ -9,6 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@cloudinary/url-gen": "^1.22.0",
     "@dnd-kit/sortable": "^10.0.0",
