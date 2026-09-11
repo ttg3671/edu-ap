@@ -37,7 +37,7 @@ jobs:
           password: ${{ secrets.SFTP_PASSWORD }}
           port: ${{ secrets.SFTP_PORT || '22' }}
           script: |
-            find /home/myapp/htdocs -mindepth 1 -maxdepth 1 \
+            find /home/edumovimiento-admin/htdocs -mindepth 1 -maxdepth 1 \
               ! -name 'admin.edumovimiento.com' \
               -exec rm -rf {} +
 
