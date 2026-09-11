@@ -32,13 +32,34 @@ jobs:
           VITE_IMG_URL: ${{ secrets.VITE_IMG_URL }}
         run: npm run build
 
+      - name: Sanitize Deployment Credentials
+        id: auth
+        env:
+          RAW_HOST: ${{ secrets.SFTP_HOST }}
+          RAW_PORT: ${{ secrets.SFTP_PORT }}
+          RAW_USER: ${{ secrets.SFTP_USER }}
+          RAW_PASS: ${{ secrets.SFTP_PASSWORD }}
+        run: |
+          CLEAN_HOST=$(echo -n "${RAW_HOST:-88.223.92.202}" | tr -d '\r\n ' )
+          CLEAN_PORT=$(echo -n "${RAW_PORT:-22}" | tr -d '\r\n ' )
+          CLEAN_USER=$(echo -n "${RAW_USER:-edumovimiento-admin}" | tr -d '\r\n ' )
+          CLEAN_PASS=$(echo -n "$RAW_PASS" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          if [ -n "$CLEAN_PASS" ]; then
+            echo "::add-mask::$CLEAN_PASS"
+          fi
+          echo "host=$CLEAN_HOST" >> "$GITHUB_OUTPUT"
+          echo "port=${CLEAN_PORT:-22}" >> "$GITHUB_OUTPUT"
+          echo "user=$CLEAN_USER" >> "$GITHUB_OUTPUT"
+          echo "pass=$CLEAN_PASS" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to CloudPanel via SFTP
         uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
-          server: ${{ secrets.SFTP_HOST }}
-          port: ${{ secrets.SFTP_PORT || '22' }}
-          username: ${{ secrets.SFTP_USER }}
-          password: ${{ secrets.SFTP_PASSWORD }}
+          server: ${{ steps.auth.outputs.host }}
+          port: ${{ steps.auth.outputs.port }}
+          username: ${{ steps.auth.outputs.user }}
+          password: ${{ steps.auth.outputs.pass }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY || secrets.SFTP_SSH_KEY || '' }}
           local_path: './dist/*'
           remote_path: '/home/edumovimiento-admin/htdocs/dist'
           delete_remote_files: true
