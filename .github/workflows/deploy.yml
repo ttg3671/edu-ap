@@ -34,12 +34,6 @@ jobs:
       - name: Build Project
         run: npm run build
 
-      - name: Upload Build Artifact (for manual download/backup)
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-build
-          path: dist/
-
       - name: Sanitize Deployment Credentials
         id: auth
         env:
