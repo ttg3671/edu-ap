@@ -11,12 +11,12 @@ const Login = ({setCurrentUser}) => {
   	const navigate = useNavigate();
 	
 	const [ userInput, setUserInput ] = useState({
-		email: '',
+		name: '',
 		password: ''
 	})
 
 	const [ inputError, setInputError ] = useState({
-		email: false,
+		name: false,
 		password: false
 	})
 
@@ -24,14 +24,14 @@ const Login = ({setCurrentUser}) => {
 	const [ errMsg, setErrMsg ] = useState('');
 	const [ isLoading, setIsLoading ] = useState(false);
 
-	const handleEmailChange = (e) => {
+	const handleNameChange = (e) => {
 		setUserInput((prevState) => {
 			return {...prevState,
-			email: e.target.value}
+			name: e.target.value}
 		})
 		// Clear errors when user starts typing
-		if (inputError.email) {
-			setInputError(prev => ({...prev, email: false}));
+		if (inputError.name) {
+			setInputError(prev => ({...prev, name: false}));
 		}
 		if (errMsg) setErrMsg('');
 	}
@@ -55,11 +55,14 @@ const Login = ({setCurrentUser}) => {
 	const handleSubmit = async (e) => {
 		e.preventDefault();
 
-    	if (!userInput.email || !userInput.password) {
+    	// Strip all whitespace and send the username in lowercase
+    	const username = userInput.name.replace(/\s+/g, '').toLowerCase();
+
+    	if (!username || !userInput.password) {
     		setInputError((prevState) => {
 	    		return {
 	    			...prevState,
-	    			email: userInput.email === '' ? true : false,
+	    			name: username === '' ? true : false,
 	    			password: userInput.password === '' ? true : false
 	    		}
 	    	});
@@ -71,7 +74,7 @@ const Login = ({setCurrentUser}) => {
 
 				const response = await axiosInstance.post('/api/v1/auth/admin/signin',
 	    			{
-					    email: userInput.email+"@gmail.com",
+					    name: username,
 					    password: userInput.password
 					},
 					{
@@ -86,12 +89,12 @@ const Login = ({setCurrentUser}) => {
 
 	    		if (response.data && response.data?.isSuccess) {
 	    			setUserInput({
-	    				email: '',
+	    				name: '',
 	    				password: ''
 	    			})
 
 	    			setCurrentUser({
-					  email: userInput.email,
+					  name: username,
 					  token: response.data.token
 					});
 
@@ -200,23 +203,25 @@ const Login = ({setCurrentUser}) => {
 			          )}
 
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Email Field */}
+                {/* Username Field */}
                 <div>
-                  <label htmlFor="email" className="block text-gray-700 text-sm font-semibold mb-2">
-                    User
+                  <label htmlFor="name" className="block text-gray-700 text-sm font-semibold mb-2">
+                    Username
                   </label>
                   <input
                     type="text"
-                    id="email"
-                    value={userInput.email}
-                    onChange={handleEmailChange}
+                    id="name"
+                    value={userInput.name}
+                    onChange={handleNameChange}
+                    autoCapitalize="none"
+                    autoComplete="username"
                     className={`w-full px-4 py-3 rounded-lg border-2 ${
-                      inputError.email ? 'border-red-500' : 'border-gray-300'
+                      inputError.name ? 'border-red-500' : 'border-gray-300'
                     } text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-500 transition-colors`}
                     placeholder="admin"
                     disabled={isLoading}
                   />
-                  {inputError.email && (
+                  {inputError.name && (
                     <p className="text-red-500 text-xs mt-1">User is required</p>
                   )}
                 </div>

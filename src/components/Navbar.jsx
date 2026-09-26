@@ -3,12 +3,13 @@ import { FaDumbbell, FaBars, FaTimes, FaChevronDown, FaChevronUp, FaSignOutAlt }
 import { Link, useNavigate } from 'react-router-dom';
 import { connect } from 'react-redux';
 import { logoutUser as logoutUserAction } from '../redux/user/user.actions';
-import axiosInstance from '../api/axios';
+import useAxiosPrivate from '../hooks/useAxiosPrivate';
 
 function Navbar({ dispatchLogout }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState(null);
   const navigate = useNavigate();
+  const axiosPrivate = useAxiosPrivate();
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -20,10 +21,8 @@ function Navbar({ dispatchLogout }) {
 
   const handleLogout = async () => {
     try {
-      await axiosInstance.get('/api/v1/logout/admin', {                                                             
-        headers: {},                                                                                          
-        withCredentials: true  
-      })
+      // Sends Bearer token + cookie so the server can clear the HttpOnly XXAFIT cookie
+      await axiosPrivate.get('/api/v1/logout/admin');
 
       // console.log('Logged out successfully');
     } catch (error) {
