@@ -12,6 +12,7 @@ import CollectionModules from './pages/CollectionModules';
 import HomePageConfig from './pages/HomePageConfig';
 import Plans from './pages/Plans';
 import Modules from './pages/Modules';
+import FreeModules from './pages/FreeModules';
 import Syllabus from './pages/Syllabus';
 import Lessons from './pages/Lessons';
 import UploadVideo from './pages/UploadVideo';
@@ -121,6 +122,14 @@ function App({ currentUser }) {
         element={
           <ProtectedRoute>
             <Modules />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/modules/free"
+        element={
+          <ProtectedRoute>
+            <FreeModules />
           </ProtectedRoute>
         }
       />

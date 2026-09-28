@@ -1,20 +1,22 @@
 import { useState, useEffect } from 'react';
-import { FaPlus } from 'react-icons/fa';
+import { FaPlus, FaArrowLeft } from 'react-icons/fa';
 import { useNavigate, useLocation } from "react-router-dom";
 import Navbar from '../components/Navbar';
 import Card from '../components/Card';
-import ModuleForm from '../components/ModuleForm';
+import FreeModuleForm from '../components/FreeModuleForm';
 import CursorPagination from '../components/CursorPagination';
 import useAxiosPrivate from '../hooks/useAxiosPrivate';
 import { deleteCloudinaryImage } from '../utils/cloudinary';
 
-function Modules() {
+const BASE_URL = '/api/v1/admin/modules/free';
+
+function FreeModules() {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editingModule, setEditingModule] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [id, setId] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Cursor-based pagination state
   const [currentCursor, setCurrentCursor] = useState(null);
@@ -32,12 +34,11 @@ function Modules() {
     let isMounted = true;
     const controller = new AbortController();
 
-    const getModules = async () => {
+    const getFreeModules = async () => {
       try {
         setLoading(true);
 
-        // Build URL with cursor-based pagination
-        let url = `/api/v1/admin/modules?limit=${itemsPerPage}`;
+        let url = `${BASE_URL}?limit=${itemsPerPage}`;
         if (currentCursor !== null && currentCursor !== undefined && currentCursor !== '') {
           url += `&cursor=${encodeURIComponent(currentCursor)}`;
         }
@@ -46,7 +47,7 @@ function Modules() {
 
         if (isMounted && response.data?.isSuccess) {
           setModules(response.data?.data || []);
-          setNextCursor(response.data?.nextCursor || null);
+          setNextCursor(response.data?.nextCursor ?? null);
           setHasMore(response.data?.hasMore || false);
         }
       } catch (error) {
@@ -54,15 +55,9 @@ function Modules() {
           return;
         } else if (error.response?.status === 401) {
           navigate("/", { state: { from: location }, replace: true });
-        } else if (error.response?.status === 400 || error.response) {
-          setError(error.response?.data?.message);
-
-          const interval = setTimeout(() => {
-            if (isMounted) setError("");
-          }, 1000);
-
-          return () => clearTimeout(interval);
-        } else {
+        } else if (error.response) {
+          if (isMounted) setError(error.response?.data?.message);
+        } else if (isMounted) {
           setError("Something went wrong.");
         }
       } finally {
@@ -70,31 +65,35 @@ function Modules() {
       }
     };
 
-    getModules();
+    getFreeModules();
 
     return () => {
       isMounted = false;
       controller.abort();
     };
-  }, [navigate, location, axiosPrivate, currentCursor]);
+  }, [navigate, location, axiosPrivate, currentCursor, refreshKey]);
+
+  useEffect(() => {
+    if (!error) return;
+    const timeout = setTimeout(() => setError(""), 3000);
+    return () => clearTimeout(timeout);
+  }, [error]);
 
   const handleEdit = async (module) => {
     try {
       setLoading(true);
-      // Fetch full module details from API
-      const response = await axiosPrivate.get(`/api/v1/admin/modules/${module.id}`);
+      const response = await axiosPrivate.get(`${BASE_URL}/${module.id}`);
 
       if (response.data?.isSuccess) {
-        setEditingModule(response.data.data);
-        setId(module?.id);
+        setEditingModule({ ...response.data.data, id: module.id });
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setShowForm(true);
       } else {
-        throw new Error(response.data?.message || "Failed to fetch module details");
+        throw new Error(response.data?.message || "Failed to fetch free module details");
       }
     } catch (err) {
-      console.error("Error fetching module details:", err?.response?.data?.message);
-      setError(err?.response?.data?.message || "Failed to load module details");
+      console.error("Error fetching free module details:", err);
+      setError(err?.response?.data?.message || err.message || "Failed to load free module details");
     } finally {
       setLoading(false);
     }
@@ -107,103 +106,71 @@ function Modules() {
 
     try {
       setLoading(true);
-      setId(id);
       const thumbnail = modules.find((item) => Number(item.id) === Number(id))?.thumbnail_url;
-      const response = await axiosPrivate.delete(`/api/v1/admin/modules/${id}`);
+      const response = await axiosPrivate.delete(`${BASE_URL}/${id}`);
 
       if (response.data?.isSuccess) {
         if (thumbnail) {
           try {
             await deleteCloudinaryImage(axiosPrivate, thumbnail);
           } catch (imgErr) {
-            console.warn('Module deleted but failed to delete its image:', imgErr);
-            setError('Module deleted, but its image could not be removed from Cloudinary');
+            console.warn('Free module deleted but failed to delete its image:', imgErr);
+            setError('Free module deleted, but its image could not be removed from Cloudinary');
           }
         }
         setModules((prev) => prev.filter((item) => Number(item.id) !== Number(id)));
         if (modules.length === 1 && cursorHistory.length > 0) {
           handlePreviousPage();
         }
+        if (editingModule && Number(editingModule.id) === Number(id)) {
+          setShowForm(false);
+          setEditingModule(null);
+        }
       } else {
         throw new Error(response.data?.message || "Delete failed");
       }
     } catch (err) {
-      console.error("Error deleting module:", err?.response?.data?.message);
-      setError(err?.response?.data?.message);
+      console.error("Error deleting free module:", err);
+      setError(err?.response?.data?.message || err.message);
     } finally {
       setLoading(false);
-      setId(null);
-      setEditingModule(null);
     }
   };
 
   const handleFormSubmit = async (submitData, id) => {
-    setLoading(true);
-
     try {
+      const response = id
+        ? await axiosPrivate.put(`${BASE_URL}/${id}`, submitData)
+        : await axiosPrivate.post(BASE_URL, submitData);
+
+      if (!response.data?.isSuccess) {
+        throw new Error(response.data?.message || (id ? "Update failed" : "Creation failed"));
+      }
+
+      setShowForm(false);
+      setEditingModule(null);
+
       if (id) {
-        // Edit existing module
-        const response = await axiosPrivate.put(`/api/v1/admin/modules/${id}`, submitData);
-
-        if (response.data?.isSuccess) {
-          // Update the module in the local list
-          setModules((prev) => 
-            prev.map((item) => (Number(item.id) === Number(id) ? { 
-              ...item, 
-              ...submitData, 
-              id,
-              is_active: submitData.is_active ? 1 : 0, // Ensure correct type for UI badge
-              is_free: submitData.is_free ? 1 : 0
-            } : item))
-          );
-          setShowForm(false);
-          setEditingModule(null);
-        } else {
-          throw new Error(response.data?.message || "Update failed");
-        }
-      } else {
-        // Add new module
-        const response = await axiosPrivate.post(`/api/v1/admin/modules`, submitData);
-
-        if (response.data?.isSuccess) {
-          // Extract returned data if server provides it, otherwise use submitData
-          const serverData = response.data.data;
-          const newId = response.data?.data || (typeof serverData === 'object' ? serverData : null) || Date.now();
-          
-          const newModule = { 
-            ...submitData, 
-            id: newId,
+        setModules((prev) =>
+          prev.map((item) => (Number(item.id) === Number(id) ? {
+            ...item,
+            title: submitData.title,
+            thumbnail_url: submitData.thumbnail_url,
             is_active: submitData.is_active ? 1 : 0,
-            is_free: submitData.is_free ? 1 : 0
-          };
-          
-          // Prepend new module to the list
-          setModules((prev) => [newModule, ...prev]);
-          setShowForm(false);
-        } else {
-          throw new Error(response.data?.message || "Creation failed");
-        }
+          } : item))
+        );
+      } else {
+        // Reload the first page so the new item shows with its server id
+        setCursorHistory([]);
+        setCurrentCursor(null);
+        setRefreshKey((k) => k + 1);
       }
     } catch (err) {
-      console.error("Error submitting form:", err?.response?.data?.message);
-      setError(err?.response?.data?.message);
-      throw err; // Re-throw to let ModuleForm handle it
-    } finally {
-      setLoading(false);
-      setId(null);
-      setEditingModule(null);
+      console.error("Error submitting free module:", err);
+      setError(err?.response?.data?.message || err.message);
+      throw err; // Re-throw to let FreeModuleForm show it
     }
   };
-
-  useEffect(() => {
-    if (!error) return;
-
-    const timeout = setTimeout(() => {
-      setError("");
-    }, 3000);
-
-    return () => clearTimeout(timeout);
-  }, [error]);
 
   const handleAddNew = () => {
     setEditingModule(null);
@@ -215,19 +182,8 @@ function Modules() {
     setEditingModule(null);
   };
 
-  const handleAddSyllabus = (id) => {
-    // Navigate to syllabus page to add syllabus
-    navigate(`/modules/${id}/syllabus`);
-  };
-
-  const handleViewSyllabus = (id) => {
-    // Navigate to view/manage syllabus
-    navigate(`/modules/${id}/syllabus`);
-  };
-
   const handleNextPage = () => {
     if (hasMore && nextCursor !== null && nextCursor !== undefined) {
-      // Save current cursor to history for back navigation
       setCursorHistory((prev) => [...prev, currentCursor]);
       setCurrentCursor(nextCursor);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -236,7 +192,6 @@ function Modules() {
 
   const handlePreviousPage = () => {
     if (cursorHistory.length > 0) {
-      // Get the previous cursor from history
       const previousCursor = cursorHistory[cursorHistory.length - 1];
       setCursorHistory((prev) => prev.slice(0, -1));
       setCurrentCursor(previousCursor);
@@ -244,38 +199,35 @@ function Modules() {
     }
   };
 
-  const isFirstPage = cursorHistory.length === 0;
-
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
 
       <main className="pt-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
+          <button
+            onClick={() => navigate('/modules')}
+            className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 mb-4 font-bold cursor-pointer"
+          >
+            <FaArrowLeft />
+            <span>Back to Modules</span>
+          </button>
+
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Modules</h1>
-              <p className="text-gray-600 mt-1">Manage your fitness modules</p>
+              <h1 className="text-3xl font-bold text-gray-900">Free Workouts</h1>
+              <p className="text-gray-600 mt-1">Manage your free workout modules</p>
             </div>
-            <div className="flex items-center gap-3">
+            {!showForm && (
               <button
-                onClick={() => navigate('/modules/free')}
-                className="flex items-center gap-2 bg-white text-emerald-700 border border-emerald-600 px-4 py-2 rounded-lg hover:bg-emerald-50 transition-colors cursor-pointer"
+                onClick={handleAddNew}
+                className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors cursor-pointer"
               >
                 <FaPlus />
-                <span>Add Free Workouts</span>
+                <span>Add Free Module</span>
               </button>
-              {!showForm && (
-                <button
-                  onClick={handleAddNew}
-                  className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors cursor-pointer"
-                >
-                  <FaPlus />
-                  <span>Add New Module</span>
-                </button>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Error Message */}
@@ -285,13 +237,13 @@ function Modules() {
             </div>
           )}
 
-          {/* ModuleForm for Add/Edit */}
+          {/* Form for Add/Edit */}
           {showForm && (
             <div className="mb-6">
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold text-gray-900">
-                    {editingModule ? 'Edit Module' : 'Add New Module'}
+                    {editingModule ? 'Edit Free Module' : 'Add Free Module'}
                   </h2>
                   <button
                     onClick={handleCancelEdit}
@@ -300,7 +252,7 @@ function Modules() {
                     Cancel
                   </button>
                 </div>
-                <ModuleForm
+                <FreeModuleForm
                   handleSubmit={handleFormSubmit}
                   editData={editingModule}
                   onCancel={handleCancelEdit}
@@ -313,35 +265,29 @@ function Modules() {
           {loading ? (
             <div className="bg-white rounded-lg shadow p-8 text-center">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
-              <p className="text-gray-600 mt-2">Loading modules...</p>
+              <p className="text-gray-600 mt-2">Loading free modules...</p>
             </div>
           ) : (
             <>
-              {/* Cards Grid */}
               {modules.length === 0 ? (
                 <div className="bg-white rounded-lg shadow p-8 text-center">
-                  <p className="text-gray-500">No modules found. Add your first module!</p>
+                  <p className="text-gray-500">No free modules found. Add your first free workout!</p>
                 </div>
               ) : (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {modules.map((module) => (
-                      <Card
-                        key={module.id}
-                        item={module}
-                        imageField="thumbnail_url"
-                        titleField="title"
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        onAddSyllabus={handleAddSyllabus}
-                        onViewSyllabus={handleViewSyllabus}
-                      />
-                    ))}
-                  </div>
-                </>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {modules.map((module) => (
+                    <Card
+                      key={module.id}
+                      item={module}
+                      imageField="thumbnail_url"
+                      titleField="title"
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </div>
               )}
 
-              {/* Footer with pagination */}
               {(modules.length > 0 || cursorHistory.length > 0) && (
                 <CursorPagination
                   hasMore={hasMore}
@@ -349,8 +295,8 @@ function Modules() {
                   onPreviousPage={handlePreviousPage}
                   onNextPage={handleNextPage}
                   itemCount={modules.length}
-                  itemLabel="module"
-                  itemLabelPlural="modules"
+                  itemLabel="free module"
+                  itemLabelPlural="free modules"
                 />
               )}
             </>
@@ -361,4 +307,4 @@ function Modules() {
   );
 }
 
-export default Modules;
+export default FreeModules;

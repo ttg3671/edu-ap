@@ -1,42 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { FaUpload, FaTimes, FaCheckCircle } from 'react-icons/fa';
 import useAxiosPrivate from '../hooks/useAxiosPrivate';
-import axios from 'axios';
-
-const extractPublicId = (urlOrPath) => {
-  if (!urlOrPath) return '';
-  const clean = urlOrPath.split('?')[0];
-  const match = clean.match(/\/image\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
-  if (match && match[1]) {
-    return match[1];
-  }
-  const cleanWithoutSlash = clean.replace(/^\/+/, '');
-  return cleanWithoutSlash.replace(/\.[a-zA-Z0-9]+$/, '');
-};
-
-const formatThumbnailPath = (urlOrData) => {
-  if (!urlOrData) return '';
-  if (typeof urlOrData === 'string') {
-    const uploadsMatch = urlOrData.match(/(\/uploads\/.+)$/);
-    if (uploadsMatch) {
-      return uploadsMatch[1];
-    }
-    const relMatch = urlOrData.match(/(uploads\/.+)$/);
-    if (relMatch) {
-      return `/${relMatch[1]}`;
-    }
-    return urlOrData;
-  }
-  if (urlOrData.secure_url) {
-    const match = urlOrData.secure_url.match(/(\/uploads\/.+)$/);
-    if (match) return match[1];
-  }
-  if (urlOrData.public_id && urlOrData.format) {
-    const cleanId = urlOrData.public_id.replace(/^\/+/, '');
-    return `/${cleanId}.${urlOrData.format}`;
-  }
-  return urlOrData.secure_url || '';
-};
+import { extractPublicId, formatThumbnailPath, uploadToCloudinary, deleteCloudinaryImage } from '../utils/cloudinary';
 
 function ModuleForm({ handleSubmit, editData = null, onCancel }) {
   const axiosPrivate = useAxiosPrivate();
@@ -193,53 +158,14 @@ function ModuleForm({ handleSubmit, editData = null, onCancel }) {
     setError('');
 
     try {
-      // Step 1: Request upload signature from server
-      const sigResponse = await axiosPrivate.get('/api/v1/cloudinary/signature');
-      
-      if (!sigResponse.data?.isSuccess || !sigResponse.data?.data) {
-        throw new Error(sigResponse.data?.message || 'Failed to get Cloudinary upload signature');
-      }
-
-      const { signature, timestamp, folder, cloud_name, api_key } = sigResponse.data.data;
-
-      // Step 2: Prepare FormData for Cloudinary signed upload
-      const cloudinaryFormData = new FormData();
-      cloudinaryFormData.append('file', file);
-      cloudinaryFormData.append('api_key', api_key);
-      cloudinaryFormData.append('timestamp', timestamp);
-      cloudinaryFormData.append('signature', signature);
-      if (folder) {
-        cloudinaryFormData.append('folder', folder);
-      }
-
-      // Step 3: Direct POST to Cloudinary upload endpoint
-      const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloud_name}/image/upload`;
-      const uploadResponse = await axios.post(cloudinaryUrl, cloudinaryFormData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(percent);
-          }
-        },
-      });
-
-      if (!uploadResponse.data?.secure_url) {
-        throw new Error('Cloudinary upload did not return a valid secure URL');
-      }
-
-      const { secure_url, public_id } = uploadResponse.data;
-      const relativePath = formatThumbnailPath(uploadResponse.data);
+      const uploaded = await uploadToCloudinary(axiosPrivate, file, setUploadProgress);
+      const { secure_url, public_id } = uploaded;
+      const relativePath = formatThumbnailPath(uploaded);
 
       // If user uploaded an uncommitted image in this same session, remove it to prevent orphans
       if (currentPublicId && currentPublicId !== public_id && !editData?.thumbnail_url?.includes(currentPublicId)) {
         try {
-          const oldPath = formData.thumbnail_url || (currentPublicId.startsWith('/') ? currentPublicId : `/${currentPublicId}`);
-          await axiosPrivate.post('/api/v1/cloudinary/delete', {
-            public_id: oldPath
-          });
+          await deleteCloudinaryImage(axiosPrivate, formData.thumbnail_url || currentPublicId);
         } catch (delErr) {
           console.warn('Failed to clean up previous temporary image:', delErr);
         }
@@ -308,32 +234,7 @@ function ModuleForm({ handleSubmit, editData = null, onCancel }) {
     setError('');
 
     try {
-      // Determine public_id: thumbnail url /uploads/img.jpg as public_id
-      let publicIdToDelete = '';
-      if (formData.thumbnail_url) {
-        publicIdToDelete = formData.thumbnail_url.startsWith('/') 
-          ? formData.thumbnail_url 
-          : `/${formData.thumbnail_url}`;
-      } else if (imagePreview) {
-        publicIdToDelete = formatThumbnailPath(imagePreview) || extractPublicId(imagePreview);
-        if (publicIdToDelete && !publicIdToDelete.startsWith('/')) {
-          publicIdToDelete = `/${publicIdToDelete}`;
-        }
-      } else if (currentPublicId) {
-        publicIdToDelete = currentPublicId.startsWith('/') 
-          ? currentPublicId 
-          : `/${currentPublicId}`;
-      }
-
-      if (publicIdToDelete) {
-        const response = await axiosPrivate.post('/api/v1/cloudinary/delete', {
-          public_id: publicIdToDelete
-        });
-
-        if (!response.data?.isSuccess && response.status !== 200 && response.status !== 204) {
-          throw new Error(response.data?.message || 'Failed to delete image');
-        }
-      }
+      await deleteCloudinaryImage(axiosPrivate, formData.thumbnail_url || currentPublicId || imagePreview);
 
       setFormData(prev => ({ ...prev, thumbnail_url: null }));
       setImagePreview(null);
@@ -599,7 +500,7 @@ function ModuleForm({ handleSubmit, editData = null, onCancel }) {
         <input
           type="file"
           id="thumbnail_url"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           onChange={handleImageChange}
           className="hidden"
           disabled={loading || isUploadingImage || isDeletingImage}
